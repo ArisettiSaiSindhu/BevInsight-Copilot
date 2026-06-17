@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BevInsight AI Copilot - Upgraded Decision Support System</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- CDNs: React, Babel, Tailwind CSS, Lucide Icons, Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.24.7/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lucide@0.395.0/dist/umd/lucide.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        darkBg: '#090d16',
+                        panelBg: 'rgba(17, 24, 43, 0.75)',
+                        cardBg: 'rgba(26, 36, 65, 0.5)',
+                        neonTeal: '#00f2fe',
+                        neonBlue: '#4facfe',
+                        neonPurple: '#b176fc',
+                        neonEmerald: '#10b981',
+                        neonAmber: '#f59e0b',
+                        neonRose: '#ef4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style type="text/css">
+        body {
+            background-color: #090d16;
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.2) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(17, 94, 89, 0.15) 0px, transparent 50%);
+            overflow-x: hidden;
+        }
+        
+        /* Shimmer Animation for Skeletons */
+        .shimmer {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 200% 100%;
+            animation: loading-shimmer 1.5s infinite;
+        }
+        @keyframes loading-shimmer {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+
+        /* Glassmorphism Styles */
+        .glass-panel {
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(10, 15, 30, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 242, 254, 0.2);
+        }
+
+        /* Print formatting */
+        @media print {
+            body {
+                background: white !important;
+                color: black !important;
+                background-image: none !important;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            .print-card {
+                border: 1px solid #e2e8f0 !important;
+                background: white !important;
+                color: black !important;
+                box-shadow: none !important;
+                page-break-inside: avoid;
+            }
+        }
+        
+        .print-only {
+            display: none;
+        }
+    </style>
+</head>
+<body class="text-slate-100 font-sans">
+    <div id="root"></div>
+
+    <!-- React App Definition -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Custom Lucide Icon Wrapper Component
+        function Icon({ name, className = "w-4 h-4" }) {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            }, [name]);
+            return <i data-lucide={name} className={className}></i>;
+        }
+
+        function App() {
+            const [activeTab, setActiveTab] = useState("dashboard"); // dashboard, chat, simulator, alerts
+            const [dashboardData, setDashboardData] = useState(null);
+            const [alerts, setAlerts] = useState([]);
+            const [chatHistory, setChatHistory] = useState([
+                {
+                    id: "welcome",
+                    sender: "system",
+                    text: "Welcome back! I am your Upgraded AI Decision Support Assistant. Ask me anything, or use the **Decision Simulator** to model changes in discount, inventory, or demand.",
+                    confidence: 100,
+                    reasoning: "System welcome prompt initialized."
+                }
+            ]);
+            const [question, setQuestion] = useState("");
+            const [chatLoading, setChatLoading] = useState(false);
+            
+            // Scenario State
+            const [simDiscount, setSimDiscount] = useState(0);
+            const [simInventory, setSimInventory] = useState(0);
+            const [simPromoWeeks, setSimPromoWeeks] = useState(0);
+            const [simSalesDrop, setSimSalesDrop] = useState(0);
+            const [simResult, setSimResult] = useState(null);
+            const [simLoading, setSimLoading] = useState(false);
+
+            // Active query results bottom sheet
+            const [inspectQuery, setInspectQuery] = useState(null); // { sql, results }
+            
+            // Board report print preview state
+            const [execSummary, setExecSummary] = useState(null);
+            const [isPrinting, setIsPrinting] = useState(false);
+
+            const chatEndRef = useRef(null);
+
+            // Load Initial Data
+            useEffect(() => {
+                fetchDashboard();
+                fetchAlerts();
+                fetchExecutiveSummary();
+            }, []);
+
+            useEffect(() => {
+                if (chatEndRef.current) {
+                    chatEndRef.current.scrollIntoView({ behavior: "smooth" });
+                }
+            }, [chatHistory, chatLoading]);
+
+            const fetchDashboard = async () => {
+                try {
+                    const res = await fetch("/api/dashboard");
+                    const data = await res.json();
+                    setDashboardData(data);
+                    
+                    // Render Chart.js trends after loading
+                    setTimeout(() => renderCharts(data.charts), 200);
+                } catch (err) {
+                    console.error("Dashboard fetch error:", err);
+                }
+            };
+
+            const fetchAlerts = async () => {
+                try {
+                    const res = await fetch("/api/alerts");
+                    const data = await res.json();
+                    setAlerts(data);
+                } catch (err) {
+                    console.error("Alerts fetch error:", err);
+                }
+            };
+
+            const fetchExecutiveSummary = async () => {
+                try {
+                    const res = await fetch("/api/executive-summary");
+                    const data = await res.json();
+                    setExecSummary(data);
+                } catch (err) {
+                    console.error("Exec Summary fetch error:", err);
+                }
+            };
+
+            const handleSimulate = async () => {
+                setSimLoading(true);
+                try {
+                    const res = await fetch(
+                        `/api/simulate?discount_change=${simDiscount}&inventory_change=${simInventory}&promo_weeks_change=${simPromoWeeks}&sales_drop_change=${simSalesDrop}`
+                    );
+                    const data = await res.json();
+                    setSimResult(data);
+                } catch (err) {
+                    console.error("Simulation error:", err);
+                } finally {
+                    setSimLoading(false);
+                }
+            };
+
+            // Run simulation automatically when sliders are shifted
+            useEffect(() => {
+                const delayDebounceFn = setTimeout(() => {
+                    handleSimulate();
+                }, 500); // Debounce API calls
+                return () => clearTimeout(delayDebounceFn);
+            }, [simDiscount, simInventory, simPromoWeeks, simSalesDrop]);
+
+            const submitQuestion = async (e) => {
+                if (e) e.preventDefault();
+                const qText = question.trim();
+                if (!qText) return;
+
+                setQuestion("");
+                setChatHistory(prev => [...prev, { id: Date.now().toString(), sender: "user", text: qText }]);
+                setChatLoading(true);
+
+                try {
+                    const res = await fetch("/api/query", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ question: qText })
+                    });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        setChatHistory(prev => [...prev, {
+                            id: (Date.now() + 1).toString(),
+                            sender: "system",
+                            text: data.insights,
+                            sql: data.sql,
+                            results: data.results,
+                            confidence: data.confidence,
+                            reasoning: data.reasoning
+                        }]);
+                        setInspectQuery({ sql: data.sql, results: data.results });
+                    } else {
+                        setChatHistory(prev => [...prev, {
+                            id: (Date.now() + 1).toString(),
+                            sender: "system",
+                            text: `<div className="text-neonRose font-semibold mb-2">Query Compilation Failed</div><p>${data.error || "An security validation or syntax error occurred."}</p>`,
+                            sql: data.sql || "",
+                            results: [],
+                            confidence: 0,
+                            reasoning: data.reasoning || "Failed SQL validation"
+                        }]);
+                    }
+                } catch (err) {
+                    console.error("Query submission error:", err);
+                    setChatHistory(prev => [...prev, {
+                        id: (Date.now() + 1).toString(),
+                        sender: "system",
+                        text: "Connection to API backend lost.",
+                        confidence: 0,
+                        reasoning: "Network connection failure."
+                    }]);
+                } finally {
+                    setChatLoading(false);
+                }
+            };
+
+            // Trigger Board Report printing
+            const printBoardReport = () => {
+                window.print();
+            };
+
+            const renderCharts = (charts) => {
+                // Chart 1: Revenue trend
+                const trendCtx = document.getElementById("trendChart")?.getContext("2d");
+                if (trendCtx) {
+                    new Chart(trendCtx, {
+                        type: 'line',
+                        data: {
+                            labels: charts.weekly_trend.map(d => d.week_start_date),
+                            datasets: [{
+                                label: 'Revenue ($)',
+                                data: charts.weekly_trend.map(d => d.revenue),
+                                borderColor: '#00f2fe',
+                                tension: 0.4,
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: { ticks: { color: '#64748b', font: { size: 9 } } },
+                                y: { ticks: { color: '#64748b', font: { size: 9 } } }
+                            },
+                            plugins: { legend: { display: false } }
+                        }
+                    });
+                }
+
+                // Chart 2: Regional share
+                const regionCtx = document.getElementById("regionChart")?.getContext("2d");
+                if (regionCtx) {
+                    new Chart(regionCtx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: charts.regional_distribution.map(d => d.region),
+                            datasets: [{
+                                data: charts.regional_distribution.map(d => d.revenue),
+                                backgroundColor: ['#4facfe', '#00f2fe', '#10b981', '#f59e0b']
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { position: 'bottom', labels: { color: '#64748b', font: { size: 9 } } } }
+                        }
+                    });
+                }
+            };
+
+            return (
+                <div className="min-h-screen flex flex-col">
+                    {/* PRINT VIEW ONLY */}
+                    <div className="print-only p-8 bg-white text-slate-900">
+                        <div className="border-b-2 border-slate-300 pb-4 mb-6">
+                            <h1 className="text-3xl font-extrabold tracking-tight">WEEKLY BOARD REPORT</h1>
+                            <p className="text-slate-500 font-medium mt-1">BevInsight AI Decision Support Copilot</p>
+                        </div>
+                        {execSummary && (
+                            <div className="space-y-6">
+                                <section className="print-card p-4 border rounded">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-2">1. Revenue Summary</h2>
+                                    <p className="text-slate-700 leading-relaxed">{execSummary.summary}</p>
+                                    <div className="grid grid-cols-3 gap-4 mt-4 text-center">
+                                        <div className="bg-slate-50 p-2 border rounded">
+                                            <span className="text-xs text-slate-500 block">Total Revenue</span>
+                                            <strong className="text-lg text-slate-800">{execSummary.total_revenue}</strong>
+                                        </div>
+                                        <div className="bg-slate-50 p-2 border rounded">
+                                            <span className="text-xs text-slate-500 block">Top Region</span>
+                                            <strong className="text-lg text-slate-800">{execSummary.top_region}</strong>
+                                        </div>
+                                        <div className="bg-slate-50 p-2 border rounded">
+                                            <span className="text-xs text-slate-500 block">Top Product</span>
+                                            <strong className="text-lg text-slate-800">{execSummary.top_product}</strong>
+                                        </div>
+                                    </div>
+                                </section>
+                                
+                                <section className="print-card p-4 border rounded">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-2">2. Business Health & Insights</h2>
+                                    <ul className="list-disc pl-5 space-y-2">
+                                        {execSummary.insights.map((ins, idx) => <li key={idx} className="text-slate-700">{ins}</li>)}
+                                    </ul>
+                                </section>
+
+                                <section className="print-card p-4 border rounded">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-2">3. Strategic Business Risks</h2>
+                                    <ul className="list-disc pl-5 space-y-2">
+                                        {execSummary.risks.map((risk, idx) => <li key={idx} className="text-slate-700">{risk}</li>)}
+                                    </ul>
+                                </section>
+
+                                <section className="print-card p-4 border rounded">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-2">4. Board Recommendations</h2>
+                                    <ul className="list-disc pl-5 space-y-2">
+                                        {execSummary.recommendations.map((rec, idx) => <li key={idx} className="text-slate-700 font-semibold">{rec}</li>)}
+                                    </ul>
+                                </section>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* MAIN INTERACTIVE APPLICATION */}
+                    <div className="no-print flex flex-col flex-grow">
+                        {/* Header */}
+                        <header className="app-header glass-panel flex justify-between items-center py-3 px-6 bg-slate-950/80 border-b border-white/5 sticky top-0 z-50">
+                            <div className="flex items-center gap-2">
+                                <Icon name="activity" className="text-neonTeal w-6 h-6 animate-pulse" />
+                                <h1 className="text-lg font-extrabold tracking-tight bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">
+                                    BevInsight <span className="text-neonTeal font-medium">Copilot v2</span>
+                                </h1>
+                                <span className="text-xs bg-emerald-500/10 text-neonEmerald px-2.5 py-0.5 rounded-full border border-neonEmerald/20 font-medium ml-3 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-neonEmerald animate-ping"></span> Enterprise Safe
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <button onClick={printBoardReport} className="bg-gradient-to-r from-neonBlue to-neonTeal hover:scale-105 transition duration-200 text-slate-950 text-xs font-bold py-1.5 px-4 rounded-lg flex items-center gap-2 shadow-lg shadow-neonTeal/10">
+                                    <Icon name="file-text" className="w-3.5 h-3.5" />
+                                    Generate Board Report
+                                </button>
+                                <div className="text-xs text-slate-400 font-mono flex items-center gap-1.5">
+                                    <Icon name="clock" className="w-3.5 h-3.5" />
+                                    <span>18:44 (Local)</span>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* Layout splits */}
+                        <div className="flex-grow grid grid-cols-12 gap-0 overflow-hidden h-[calc(100vh-53px)]">
+                            
+                            {/* Navigation Sidebar (Mini) */}
+                            <nav className="col-span-1 bg-slate-950/40 border-r border-white/5 py-6 flex flex-col items-center justify-between">
+                                <div className="flex flex-col gap-4 w-full px-2">
+                                    <button onClick={() => setActiveTab("dashboard")} className={`py-3 px-2 rounded-xl flex flex-col items-center gap-1.5 transition ${activeTab === 'dashboard' ? 'bg-neonTeal/10 text-neonTeal border border-neonTeal/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
+                                        <Icon name="layout-dashboard" className="w-5 h-5" />
+                                        <span className="text-[9px] font-bold">Dashboard</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab("chat")} className={`py-3 px-2 rounded-xl flex flex-col items-center gap-1.5 transition ${activeTab === 'chat' ? 'bg-neonTeal/10 text-neonTeal border border-neonTeal/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
+                                        <Icon name="message-square" className="w-5 h-5" />
+                                        <span className="text-[9px] font-bold">AI Analyst</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab("simulator")} className={`py-3 px-2 rounded-xl flex flex-col items-center gap-1.5 transition ${activeTab === 'simulator' ? 'bg-neonTeal/10 text-neonTeal border border-neonTeal/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}`}>
+                                        <Icon name="sliders" className="w-5 h-5" />
+                                        <span className="text-[9px] font-bold">Simulator</span>
+                                    </button>
+                                    <button onClick={() => setActiveTab("alerts")} className={`py-3 px-2 rounded-xl flex flex-col items-center gap-1.5 transition ${activeTab === 'alerts' ? 'bg-neonTeal/10 text-neonTeal border border-neonTeal/20' : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'} relative`}>
+                                        <Icon name="bell" className="w-5 h-5" />
+                                        <span className="text-[9px] font-bold">Alerts</span>
+                                        {alerts.length > 0 && <span className="absolute top-1 right-2 w-2 h-2 bg-neonRose rounded-full"></span>}
+                                    </button>
+                                </div>
+                                <div className="w-8 h-8 rounded-full bg-slate-800 text-[11px] font-bold flex items-center justify-center text-neonBlue border border-neonBlue/20">SA</div>
+                            </nav>
+
+                            {/* MAIN PANEL CONTENT */}
+                            <main className="col-span-11 bg-slate-900/60 overflow-y-auto">
+                                
+                                {/* TAB 1: EXECUTIVE DASHBOARD */}
+                                {activeTab === "dashboard" && (
+                                    <div className="p-6 space-y-6">
+                                        <div className="flex justify-between items-center">
+                                            <div>
+                                                <h2 className="text-xl font-bold tracking-tight">Executive Dashboard</h2>
+                                                <p className="text-xs text-slate-400 mt-0.5">Real-time beverage sales, promotional margins, and risk indexes.</p>
+                                            </div>
+                                        </div>
+
+                                        {/* KPI Cards Grid */}
+                                        {dashboardData ? (
+                                            <div className="grid grid-cols-6 gap-4">
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Total Revenue</span>
+                                                    <strong className="text-xl font-extrabold mt-1 block">${dashboardData.kpis.total_revenue.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong>
+                                                    <span className="text-[10px] text-neonEmerald flex items-center gap-1 mt-1"><Icon name="trending-up" className="w-3 h-3" /> +11.4% WoW</span>
+                                                </div>
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Units Sold</span>
+                                                    <strong className="text-xl font-extrabold mt-1 block">{dashboardData.kpis.total_units_sold.toLocaleString()}</strong>
+                                                    <span className="text-[10px] text-slate-500 mt-1 block">Bottles / Cans</span>
+                                                </div>
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Promo Revenue Share</span>
+                                                    <strong className="text-xl font-extrabold mt-1 block">{dashboardData.kpis.promo_revenue_pct}%</strong>
+                                                    <span className="text-[10px] text-slate-500 mt-1 block">of gross turnover</span>
+                                                </div>
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Top Brand</span>
+                                                    <strong className="text-sm font-bold mt-2 truncate block">{dashboardData.kpis.top_product}</strong>
+                                                    <span className="text-[10px] text-slate-500 block">Category leader</span>
+                                                </div>
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Top Region</span>
+                                                    <strong className="text-xl font-extrabold mt-1 block">{dashboardData.kpis.top_region}</strong>
+                                                    <span className="text-[10px] text-slate-500 mt-1 block">South runner-up</span>
+                                                </div>
+                                                <div className="glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5 relative overflow-hidden">
+                                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Inventory Risks</span>
+                                                    <strong className="text-xl font-extrabold mt-1 text-neonRose block">{dashboardData.kpis.inventory_risk_count}</strong>
+                                                    <span className="text-[10px] text-neonRose mt-1 block font-medium">Critical Stockouts</span>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-6 gap-4">
+                                                {[...Array(6)].map((_, i) => (
+                                                    <div key={i} className="shimmer bg-slate-800/40 h-24 rounded-xl"></div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Business Health Panel */}
+                                        {dashboardData && (
+                                            <div className="grid grid-cols-3 gap-6">
+                                                <div className="glass-panel bg-gradient-to-br from-slate-950/60 to-slate-900/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">WoW Growth Rate</span>
+                                                        <strong className="text-2xl font-extrabold block text-neonTeal mt-1">{dashboardData.health.growth_rate}</strong>
+                                                    </div>
+                                                    <Icon name="trending-up" className="w-8 h-8 text-neonTeal/30" />
+                                                </div>
+                                                <div className="glass-panel bg-gradient-to-br from-slate-950/60 to-slate-900/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Promotion Uplift</span>
+                                                        <strong className="text-2xl font-extrabold block text-neonPurple mt-1">{dashboardData.health.promo_uplift}</strong>
+                                                    </div>
+                                                    <Icon name="zap" className="w-8 h-8 text-neonPurple/30" />
+                                                </div>
+                                                <div className="glass-panel bg-gradient-to-br from-slate-950/60 to-slate-900/60 p-4 rounded-xl border border-white/5 flex items-center justify-between">
+                                                    <div>
+                                                        <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Aggregated Risk Score</span>
+                                                        <strong className="text-2xl font-extrabold block text-neonRose mt-1">{dashboardData.health.risk_score}</strong>
+                                                    </div>
+                                                    <Icon name="alert-triangle" className="w-8 h-8 text-neonRose/30" />
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Charts Panel */}
+                                        <div className="grid grid-cols-12 gap-6">
+                                            <div className="col-span-8 glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5 h-[300px] flex flex-col justify-between">
+                                                <div className="flex justify-between items-center">
+                                                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Weekly Revenue Trend ($)</h3>
+                                                </div>
+                                                <div className="flex-grow relative mt-4 h-[220px]">
+                                                    <canvas id="trendChart"></canvas>
+                                                </div>
+                                            </div>
+                                            <div className="col-span-4 glass-panel bg-slate-950/40 p-4 rounded-xl border border-white/5 h-[300px] flex flex-col justify-between">
+                                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Regional Performance</h3>
+                                                <div className="flex-grow relative mt-4 h-[220px] flex items-center justify-center">
+                                                    <canvas id="regionChart"></canvas>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Weekly Executive summary board block */}
+                                        {execSummary && (
+                                            <div className="glass-panel bg-gradient-to-r from-slate-950/80 to-slate-900/40 p-6 rounded-xl border border-white/5 space-y-4">
+                                                <div className="flex items-center gap-2">
+                                                    <Icon name="clipboard-list" className="text-neonTeal w-5 h-5" />
+                                                    <h3 className="text-sm font-bold uppercase tracking-wider text-slate-200">AI Board Executive Summary</h3>
+                                                </div>
+                                                <p className="text-sm text-slate-300 leading-relaxed font-sans">{execSummary.summary}</p>
+                                                <div className="grid grid-cols-3 gap-6 pt-2">
+                                                    <div>
+                                                        <span className="text-[10px] text-neonTeal font-bold uppercase tracking-wider block mb-1.5">Top Insights</span>
+                                                        <ul className="text-xs text-slate-400 space-y-1">
+                                                            {execSummary.insights.map((ins, i) => <li key={i} className="flex items-start gap-1"><span className="text-neonTeal">•</span><span>{ins}</span></li>)}
+                                                        </ul>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-neonRose font-bold uppercase tracking-wider block mb-1.5">Key Business Risks</span>
+                                                        <ul className="text-xs text-slate-400 space-y-1">
+                                                            {execSummary.risks.map((risk, i) => <li key={i} className="flex items-start gap-1"><span className="text-neonRose">•</span><span>{risk}</span></li>)}
+                                                        </ul>
+                                                    </div>
+                                                    <div>
+                                                        <span className="text-[10px] text-neonEmerald font-bold uppercase tracking-wider block mb-1.5">Strategic Recommendations</span>
+                                                        <ul className="text-xs text-slate-400 space-y-1 font-semibold">
+                                                            {execSummary.recommendations.map((rec, i) => <li key={i} className="flex items-start gap-1"><span className="text-neonEmerald">•</span><span className="text-slate-300">{rec}</span></li>)}
+                                                        </ul>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* TAB 2: CHAT INTERFACE (ChatGPT Style) */}
+                                {activeTab === "chat" && (
+                                    <div className="flex flex-col h-[calc(100vh-53px)]">
+                                        <div className="flex-grow overflow-y-auto p-6 space-y-4" style={{maxHeight: 'calc(100vh - 180px)'}}>
+                                            {chatHistory.map((chat) => (
+                                                <div key={chat.id} className={`flex flex-col ${chat.sender === 'user' ? 'items-end' : 'items-start'}`}>
+                                                    <div className={`max-w-[75%] rounded-2xl p-4 border ${chat.sender === 'user' ? 'bg-neonBlue/10 border-neonBlue/20 text-slate-100 rounded-tr-sm' : 'bg-slate-950/60 border-white/5 rounded-tl-sm'}`}>
+                                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                                                            <Icon name={chat.sender === 'user' ? 'user' : 'sparkles'} className="w-3.5 h-3.5" />
+                                                            <span>{chat.sender === 'user' ? 'Corporate Analyst' : 'BevInsight AI Agent'}</span>
+                                                            {chat.confidence !== undefined && (
+                                                                <span className={`ml-auto px-2 py-0.5 rounded text-[9px] ${chat.confidence > 80 ? 'bg-neonEmerald/10 text-neonEmerald' : 'bg-neonAmber/10 text-neonAmber'}`}>Confidence: {chat.confidence}%</span>
+                                                            )}
+                                                        </div>
+                                                        {chat.sender === 'system' ? (
+                                                            <div className="text-sm text-slate-300 space-y-3 leading-relaxed" dangerouslySetInnerHTML={{ __html: chat.text }}></div>
+                                                        ) : (
+                                                            <p className="text-sm font-medium">{chat.text}</p>
+                                                        )}
+                                                        
+                                                        {/* Reasoning logs */}
+                                                        {chat.reasoning && (
+                                                            <div className="mt-4 pt-3 border-t border-white/5">
+                                                                <span className="text-[9px] uppercase tracking-wider font-bold text-slate-400 block mb-1">Explainability Logic</span>
+                                                                <pre className="text-[10px] font-mono text-slate-400 whitespace-pre-wrap">{chat.reasoning}</pre>
+                                                            </div>
+                                                        )}
+                                                        
+                                                        {/* Expand SQL button */}
+                                                        {chat.sql && (
+                                                            <div className="mt-3 flex gap-2">
+                                                                <button onClick={() => setInspectQuery({ sql: chat.sql, results: chat.results })} className="text-[10px] font-mono font-bold bg-slate-900 border border-white/5 text-neonTeal py-1 px-3 rounded hover:bg-slate-800 transition">
+                                                                    Inspect Raw Query & Table Data
+                                                                </button>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {chatLoading && (
+                                                <div className="flex flex-col items-start">
+                                                    <div className="bg-slate-950/60 border border-white/5 rounded-2xl rounded-tl-sm p-4 w-[400px]">
+                                                        <div className="flex items-center gap-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-3">
+                                                            <Icon name="sparkles" className="w-3.5 h-3.5 text-neonTeal animate-pulse" />
+                                                            <span>Agent processing query...</span>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <div className="shimmer bg-slate-800/40 h-3 w-full rounded"></div>
+                                                            <div className="shimmer bg-slate-800/40 h-3 w-3/4 rounded"></div>
+                                                            <div className="shimmer bg-slate-800/40 h-3 w-1/2 rounded"></div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            <div ref={chatEndRef} />
+                                        </div>
+
+                                        {/* Input Box */}
+                                        <div className="p-4 bg-slate-950/40 border-t border-white/5 sticky bottom-0">
+                                            <form onSubmit={submitQuestion} className="flex gap-3 max-w-4xl mx-auto">
+                                                <input type="text" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask a data question (e.g. 'Show products affected by stockouts' or 'What is the fastest growing brand?')..." className="flex-grow bg-slate-900 border border-white/10 rounded-xl px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-neonTeal focus:shadow-lg focus:shadow-neonTeal/5 transition" />
+                                                <button type="submit" className="bg-gradient-to-r from-neonBlue to-neonTeal text-slate-950 font-bold px-5 rounded-xl hover:scale-105 transition flex items-center gap-1.5 shadow-lg shadow-neonTeal/10">
+                                                    <Icon name="send" className="w-4 h-4" />
+                                                    <span>Analyze</span>
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* TAB 3: DECISION SIMULATOR (Scenario Engine) */}
+                                {activeTab === "simulator" && (
+                                    <div className="p-6 space-y-6">
+                                        <div>
+                                            <h2 className="text-xl font-bold tracking-tight">Scenario Decision Simulator</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Model adjustments in pricing, safety inventories, and promotional weeks to forecast outcomes.</p>
+                                        </div>
+
+                                        <div className="grid grid-cols-12 gap-6">
+                                            {/* Inputs Sliders */}
+                                            <div className="col-span-5 glass-panel bg-slate-950/40 p-6 rounded-xl border border-white/5 space-y-6">
+                                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 border-b border-white/5 pb-2">Simulation Parameters</h3>
+                                                
+                                                {/* Parameter 1 */}
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-slate-400 font-bold">Promotional Discount Adjustments</span>
+                                                        <span className="text-neonTeal font-mono font-bold">{simDiscount >= 0 ? `+${simDiscount}` : simDiscount}%</span>
+                                                    </div>
+                                                    <input type="range" min="-15" max="25" value={simDiscount} onChange={(e) => setSimDiscount(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-neonTeal" />
+                                                    <span className="text-[9px] text-slate-500 block">Simulates pricing sensitivity and elasticities. Higher discounts expand volume but dilute average net margin.</span>
+                                                </div>
+
+                                                {/* Parameter 2 */}
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-slate-400 font-bold">Safety Stock Levels</span>
+                                                        <span className="text-neonPurple font-mono font-bold">{simInventory >= 0 ? `+${simInventory}` : simInventory}%</span>
+                                                    </div>
+                                                    <input type="range" min="-10" max="40" value={simInventory} onChange={(e) => setSimInventory(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-neonPurple" />
+                                                    <span className="text-[9px] text-slate-500 block">Simulates safety cushions. Higher inventories reduce stockout probabilities and recover lost demand.</span>
+                                                </div>
+
+                                                {/* Parameter 3 */}
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-slate-400 font-bold">Promotional Extensions</span>
+                                                        <span className="text-neonBlue font-mono font-bold">{simPromoWeeks >= 0 ? `+${simPromoWeeks}` : simPromoWeeks} Weeks</span>
+                                                    </div>
+                                                    <input type="range" min="-4" max="6" value={simPromoWeeks} onChange={(e) => setSimPromoWeeks(parseInt(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-neonBlue" />
+                                                    <span className="text-[9px] text-slate-500 block">Prolongs campaign dates. Increases volume velocity but dilutes category margins.</span>
+                                                </div>
+
+                                                {/* Parameter 4 */}
+                                                <div className="space-y-2">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-slate-400 font-bold">Market Demand Shifts</span>
+                                                        <span className="text-neonRose font-mono font-bold">{simSalesDrop >= 0 ? `+${simSalesDrop}` : simSalesDrop}%</span>
+                                                    </div>
+                                                    <input type="range" min="-30" max="15" value={simSalesDrop} onChange={(e) => setSimSalesDrop(parseFloat(e.target.value))} className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-neonRose" />
+                                                    <span className="text-[9px] text-slate-500 block">Models general sales decreases (recession, summer drops) or growth factors.</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Results Display */}
+                                            <div className="col-span-7 glass-panel bg-slate-950/60 p-6 rounded-xl border border-white/5 relative flex flex-col justify-between">
+                                                {simLoading && (
+                                                    <div className="absolute inset-0 bg-slate-950/80 rounded-xl flex items-center justify-center z-10 backdrop-blur-sm">
+                                                        <div className="text-center">
+                                                            <div className="w-8 h-8 border-2 border-neonTeal border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                                                            <p className="text-xs text-slate-400">Recalculating forecast model...</p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300 border-b border-white/5 pb-2">Forecasted Outcomes</h3>
+
+                                                {simResult ? (
+                                                    <div className="space-y-6 mt-4">
+                                                        {/* Primary indicators */}
+                                                        <div className="grid grid-cols-2 gap-4">
+                                                            <div className="bg-slate-900/50 p-4 border border-white/5 rounded-xl text-center">
+                                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Estimated Revenue Shift</span>
+                                                                <strong className={`text-2xl font-extrabold block mt-2 ${simResult.simulated_metrics.revenue >= simResult.base_metrics.revenue ? 'text-neonEmerald' : 'text-neonRose'}`}>
+                                                                    {simResult.revenue_change}
+                                                                </strong>
+                                                                <span className="text-[10px] text-slate-500 mt-1 block">New Revenue: ${simResult.simulated_metrics.revenue.toLocaleString(undefined, {maximumFractionDigits: 0})}</span>
+                                                            </div>
+                                                            <div className="bg-slate-900/50 p-4 border border-white/5 rounded-xl text-center">
+                                                                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Expected Volume Uplift</span>
+                                                                <strong className={`text-2xl font-extrabold block mt-2 ${simResult.simulated_metrics.units_sold >= simResult.base_metrics.units_sold ? 'text-neonEmerald' : 'text-neonRose'}`}>
+                                                                    {simResult.sales_uplift}
+                                                                </strong>
+                                                                <span className="text-[10px] text-slate-500 mt-1 block">New Units: {simResult.simulated_metrics.units_sold.toLocaleString()}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Secondary indicators */}
+                                                        <div className="grid grid-cols-3 gap-4">
+                                                            <div className="bg-slate-900/30 p-3 rounded-lg border border-white/5 text-center">
+                                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Inventory Stockouts</span>
+                                                                <strong className="text-lg font-bold block text-slate-200 mt-1">{simResult.simulated_metrics.stockouts}</strong>
+                                                                <span className="text-[9px] text-slate-500 block">Base: {simResult.base_metrics.stockouts}</span>
+                                                            </div>
+                                                            <div className="bg-slate-900/30 p-3 rounded-lg border border-white/5 text-center">
+                                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Inventory Risk</span>
+                                                                <strong className={`text-lg font-bold block mt-1 ${simResult.inventory_risk === 'High' ? 'text-neonRose' : (simResult.inventory_risk === 'Medium' ? 'text-neonAmber' : 'text-neonEmerald')}`}>
+                                                                    {simResult.inventory_risk}
+                                                                </strong>
+                                                                <span className="text-[9px] text-slate-500 block">Safety capacity</span>
+                                                            </div>
+                                                            <div className="bg-slate-900/30 p-3 rounded-lg border border-white/5 text-center">
+                                                                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider block">Model Confidence</span>
+                                                                <strong className="text-lg font-bold block text-neonBlue mt-1">{simResult.confidence}%</strong>
+                                                                <span className="text-[9px] text-slate-500 block">Statistical confidence</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="bg-gradient-to-r from-neonBlue/10 to-transparent p-4 border-l-2 border-neonBlue rounded-r-xl">
+                                                            <span className="text-[10px] font-bold text-neonBlue uppercase tracking-wider block mb-1">AI Recommendation Log</span>
+                                                            <p className="text-xs text-slate-400 leading-relaxed">
+                                                                {simResult.simulated_metrics.revenue < simResult.base_metrics.revenue ? 
+                                                                    "Warning: Simulating deep discounts causes massive pricing dilution that exceeds volume growth. Focus promotions on high-margin coffee segments and raise inventories by +15% instead to recover lost revenue from stockouts." :
+                                                                    "Recommendation: Simulating these parameters yields positive growth. Safe safety levels have successfully protected shelf inventories. Proceed with promotion extension."}
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex-grow flex items-center justify-center text-slate-500 text-xs">
+                                                        Recalculating forecast model parameters...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* TAB 4: SMART ALERTS */}
+                                {activeTab === "alerts" && (
+                                    <div className="p-6 space-y-6">
+                                        <div>
+                                            <h2 className="text-xl font-bold tracking-tight">Active Smart Alerts</h2>
+                                            <p className="text-xs text-slate-400 mt-0.5">Real-time alerts generated from inventory stockouts and promotional pacing logs.</p>
+                                        </div>
+
+                                        <div className="space-y-4 max-w-4xl">
+                                            {alerts.map((alert) => (
+                                                <div key={alert.id} className={`p-4 rounded-xl border flex gap-3 items-start relative overflow-hidden ${alert.severity === 'CRITICAL' ? 'bg-neonRose/5 border-neonRose/20' : 'bg-neonAmber/5 border-neonAmber/20'}`}>
+                                                    <div className={`absolute top-0 left-0 w-1 h-full ${alert.severity === 'CRITICAL' ? 'bg-neonRose' : 'bg-neonAmber'}`}></div>
+                                                    <Icon name={alert.severity === 'CRITICAL' ? 'alert-triangle' : 'alert-circle'} className={`w-5 h-5 mt-0.5 ${alert.severity === 'CRITICAL' ? 'text-neonRose' : 'text-neonAmber'}`} />
+                                                    <div className="space-y-1">
+                                                        <span className="text-xs font-bold text-slate-200 block">{alert.title}</span>
+                                                        <p className="text-xs text-slate-400 leading-relaxed">{alert.description}</p>
+                                                        <div className="flex gap-2 items-center pt-2">
+                                                            <span className="text-[9px] text-slate-500 font-mono">{alert.timestamp}</span>
+                                                            <span className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${alert.severity === 'CRITICAL' ? 'bg-neonRose/15 text-neonRose' : 'bg-neonAmber/15 text-neonAmber'}`}>{alert.severity}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                            {alerts.length === 0 && (
+                                                <div className="text-center py-12 text-slate-500 text-sm">
+                                                    <Icon name="shield-check" className="w-10 h-10 mx-auto text-slate-500 mb-3" />
+                                                    No active critical warning alerts found. System status stable.
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </main>
+                        </div>
+                    </div>
+
+                    {/* DYNAMIC RAW SQL DATA INSPECTOR PANEL (COLLAPSIBLE SHEET) */}
+                    {inspectQuery && (
+                        <div className="no-print fixed bottom-0 right-0 w-[500px] h-[400px] bg-slate-950 border-t border-l border-white/10 z-[100] flex flex-col justify-between shadow-2xl">
+                            <div className="flex justify-between items-center py-2 px-4 bg-slate-900 border-b border-white/5">
+                                <div className="flex items-center gap-1.5">
+                                    <Icon name="database" className="w-4 h-4 text-neonTeal" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-300">Raw Database Inspector</span>
+                                </div>
+                                <button onClick={() => setInspectQuery(null)} className="text-slate-400 hover:text-white">
+                                    <Icon name="x" className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="flex-grow overflow-y-auto p-4 space-y-4">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Executed SQLite Query</span>
+                                    <pre className="bg-black/60 p-3 rounded-lg border border-white/5 overflow-x-auto"><code className="text-[10px] font-mono text-slate-200">{inspectQuery.sql}</code></pre>
+                                </div>
+                                <div className="space-y-1">
+                                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Returned Records ({inspectQuery.results.length})</span>
+                                    <div className="border border-white/5 rounded-lg overflow-hidden overflow-x-auto">
+                                        <table className="w-full text-[10px] text-left border-collapse">
+                                            <thead>
+                                                <tr className="bg-white/5 border-b border-white/5">
+                                                    {inspectQuery.results.length > 0 && Object.keys(inspectQuery.results[0]).map((col) => (
+                                                        <th key={col} className="p-2 font-bold text-slate-400 uppercase tracking-wider">{col}</th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {inspectQuery.results.map((row, idx) => (
+                                                    <tr key={idx} className="border-b border-white/5 hover:bg-white/2">
+                                                        {Object.values(row).map((val, cidx) => (
+                                                            <td key={cidx} className="p-2 text-slate-300">{val === null ? <em className="text-slate-500">null</em> : (typeof val === 'number' && val > 1000 ? val.toLocaleString() : val)}</td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                                {inspectQuery.results.length === 0 && (
+                                                    <tr>
+                                                        <td className="p-4 text-slate-500 text-center">Zero matching rows returned.</td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
+    </script>
+</body>
+</html>
